@@ -341,18 +341,9 @@ EOF
 	CLEANUP_RMOUTPUT=0
 }
 
-chroot_main() {
-	echo "chroot mode"
-	echo
-
-	# basic package
-	locale-gen zh_CN.UTF-8 en_US.UTF-8
-	mv /etc/apt/sources.list /etc/apt/sources.list.bak
-	touch /etc/apt/sources.list
-	RELEASE_CODE=`lsb_release -cs`
-	echo "deb file:/cdimage "${RELEASE_CODE}" main restricted" > /etc/apt/sources.list
+chroot_package_install() {
 	apt-get update
-	apt-get install -y --install-suggests \
+	apt-get install -y \
 		openssh-server \
 		unzip \
 		gcc \
@@ -366,6 +357,21 @@ chroot_main() {
 		chrony \
 		net-tools
 	apt-get install -y pciutils strace nfs-common sysstat libelf1 libnuma1 dmidecode
+}
+
+chroot_main() {
+	echo "chroot mode"
+	echo
+
+	# basic package
+	locale-gen zh_CN.UTF-8 en_US.UTF-8
+	mv /etc/apt/sources.list /etc/apt/sources.list.bak
+	touch /etc/apt/sources.list
+	RELEASE_CODE=`lsb_release -cs`
+	echo "deb file:/cdimage "${RELEASE_CODE}" main restricted" > /etc/apt/sources.list
+	if [[ "$RELEASE_CODE" == "bionic" ]];then
+		chroot_package_install
+	fi
 	rm /etc/apt/sources.list
 	mv /etc/apt/sources.list.bak /etc/apt/sources.list
 	sed -i 's/^deb/# deb/g' /etc/apt/sources.list
@@ -381,21 +387,27 @@ deb ${MIRROR_URL} ${RELEASE_CODE}-security main restricted universe multiverse
 # deb-src ${MIRROR_URL} ${RELEASE_CODE}-security main restricted universe multiverse
 
 EOF
+
+	# online install
 	if [[ $ONLINE_UPGRADE -ne 0 ]];then
 		mv /etc/resolv.conf /etc/resolv.conf.bak
 		echo -e "nameserver 223.5.5.5\nnameserver 8.8.8.8" > /etc/resolv.conf
 		apt-get update
 		apt-get upgrade -y
 		apt-get install -y cmake
+		if [[ "$RELEASE_CODE" == "focal" ]];then
+			chroot_package_install
+		fi
 		rm /etc/resolv.conf
 		mv /etc/resolv.conf.bak /etc/resolv.conf
 	fi
 
 	# setup user
-	adduser --gecos  "" $USER_NAME --disabled-password
-	cat << EOF | chpasswd
-$USER_NAME:$USER_PWD
+	cat << EOF | adduser --gecos "" $USER_NAME
+$USER_PWD
+$USER_PWD
 EOF
+	echo "User $USER_NAME added with password $USER_PWD ."
 	usermod -aG sudo $USER_NAME
 	sed -i 's/%sudo\tALL=(ALL:ALL) ALL/%sudo\tALL=(ALL:ALL) NOPASSWD:ALL/g' /etc/sudoers
 
